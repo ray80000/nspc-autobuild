@@ -116,8 +116,10 @@ jobs:
       with:
         name: nspc-config-tool
         path: nspc-config/nspc-config.nro
+
+  release:
     runs-on: ubuntu-latest
-    needs: [build-sysmodule, build-overlay]
+    needs: [build-sysmodule, build-overlay, build-config-tool]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
 
     steps:
@@ -140,6 +142,9 @@ jobs:
 
         # Copy overlay
         cp nspc-overlay/parental_control.ovl NSPC_Complete/switch/.overlays/
+
+        # Copy config tool
+        cp nspc-config-tool/nspc-config.nro NSPC_Complete/switch/
 
         # Create ZIP
         zip -r NSPC_AMS1.10.2_Fix.zip NSPC_Complete/
