@@ -1,0 +1,21 @@
+# Build artifacts
+*.elf
+*.nro
+*.nso
+*.nsp
+*.npdm
+*.ovl
+build/
+build.nosync/
+out.nosync/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
