@@ -98,6 +98,9 @@ jobs:
       image: devkitpro/devkita64:latest
 
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
     - name: Install dependencies
       run: |
         echo "Checking devkitPro environment..."
