@@ -19,8 +19,12 @@ jobs:
     steps:
     - name: Install dependencies
       run: |
-        dkp-pacman -Syu --noconfirm
-        dkp-pacman -S --noconfirm switch-dev switch-libnx switch-mbedtls
+        # Note: devkitPro Docker image already contains switch-dev, libnx, mbedtls
+        # Skip pacman update to avoid 403 errors on some mirrors
+        echo "Checking devkitPro environment..."
+        ls -la /opt/devkitpro/
+        which aarch64-none-elf-gcc
+        aarch64-none-elf-gcc --version
 
     - name: Checkout NSPC with submodules
       run: |
@@ -32,10 +36,6 @@ jobs:
         # Apply overlay compatibility patch
         if [ -f ../patches/main.cpp.patch ]; then
           patch -p1 < ../patches/main.cpp.patch || echo "Patch may have already been applied or conflicts, continuing..."
-        fi
-        # Apply main.cpp fix for AMS 1.10.2 compatibility
-        if [ -f overlay/src/main.cpp.fixed ]; then
-          cp overlay/src/main.cpp.fixed overlay/src/main.cpp
         fi
       working-directory: ${{ github.workspace }}
 
@@ -62,8 +62,10 @@ jobs:
     steps:
     - name: Install dependencies
       run: |
-        dkp-pacman -Syu --noconfirm
-        dkp-pacman -S --noconfirm switch-dev switch-libnx switch-mbedtls
+        echo "Checking devkitPro environment..."
+        ls -la /opt/devkitpro/
+        which aarch64-none-elf-gcc
+        aarch64-none-elf-gcc --version
 
     - name: Checkout NSPC with submodules
       run: |
@@ -72,9 +74,9 @@ jobs:
     - name: Apply patches
       run: |
         cd nspc
-        # Apply main.cpp fix for AMS 1.10.2 compatibility
-        if [ -f overlay/src/main.cpp.fixed ]; then
-          cp overlay/src/main.cpp.fixed overlay/src/main.cpp
+        # Apply overlay compatibility patch
+        if [ -f ../patches/main.cpp.patch ]; then
+          patch -p1 < ../patches/main.cpp.patch || echo "Patch may have already been applied or conflicts, continuing..."
         fi
       working-directory: ${{ github.workspace }}
 
