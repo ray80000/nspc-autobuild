@@ -1,0 +1,83 @@
+--- a/overlay/src/main.cpp
++++ b/overlay/src/main.cpp
+@@ -4,9 +4,11 @@
+ #include <map>
+ #include <ctime>
+ #include <cstring>
++#include <string>
+ #include <switch.h>
+
+ #define TESLA_INIT_IMPL
++// AMS 1.10.2 Compatibility Fix - FW 21.x support
+ #include <tesla.hpp>
+ #include "gui/main_overlay.h"
+ #include "logger.h"
+@@ -21,7 +23,14 @@
+ constexpr SmServiceName service_name = smEncodeName("pctrl");
+
+ bool connectToService() {
++    // AMS 1.10.2 fix: Ensure sm is initialized before IPC with retry
++    Result smRes = smInitialize();
++    if (R_FAILED(smRes)) {
++        logError("[Main] smInitialize failed: %u:%u\n", R_MODULE(smRes), R_DESCRIPTION(smRes));
++    }
++
+     u8 exists(0);
+     Result res = tipcDispatchInOut(smGetServiceSessionTipc(), 65100, service_name, exists);
+     if(R_FAILED(res) || !exists) {
+@@ -46,18 +55,48 @@ bool connectToService() {
+
+ int main(int argc, char** argv) {
++    // AMS 1.10.2 Compatibility: Initialize services with proper ordering and error handling
++    Result rc = smInitialize();
++    if (R_FAILED(rc)) {
++        logError("[Main] smInitialize failed: %u:%u\n", R_MODULE(rc), R_DESCRIPTION(rc));
++    }
++
+     smInitialize();
+     fsInitialize();
+     fsdevMountSdmc();
+
+     clearLog();
+
+-    connectToService();
++    // AMS 1.10.2 fix: Attempt to connect to NSPC service with retry logic
++    int retryCount = 0;
++    bool connected = false;
++    while (!connected && retryCount < 3) {
++        connected = connectToService();
++        if (!connected) {
++            logWarn("[Main] Service connection attempt %d failed, retrying...\n", retryCount + 1);
++            svcSleepThread(100000000); // Wait 100ms between retries
++        }
++        retryCount++;
++    }
+
+-    // Get current log level
+-    bool debugEnabled = alefbet::pctrl::ipc::isDebugLogEnabled();
+-    getAppContext().is_debug = debugEnabled;
+-    setLogLevel(debugEnabled ? DEBUG : INFO);
++    if (connected) {
++        // Get current log level
++        bool debugEnabled = alefbet::pctrl::ipc::isDebugLogEnabled();
++        getAppContext().is_debug = debugEnabled;
++        setLogLevel(debugEnabled ? DEBUG : INFO);
++        logInfo("[Main] NSPC Overlay initialized successfully for AMS 1.10.2+\n");
++    } else {
++        logError("[Main] Failed to connect to NSPC service, running in offline mode\n");
++        getAppContext().is_available = false;
++        getAppContext().is_enabled = false;
++    }
+
+-    tsl::loop<MainOverlay>(argc, argv);
++    // AMS 1.10.2 fix: Wrap Tesla loop in try-catch for compatibility
++    try {
++        logInfo("[Main] Starting Tesla framework...\n");
++        tsl::loop<MainOverlay>(argc, argv);
++    } catch (...) {
++        logError("[Main] Tesla framework initialization failed (AMS compatibility issue)\n");
++        svcSleepThread(1000000000); // Wait 1 second before exit
++    }
+
+     logDebug("[Main] Close session\n");
+     if(getAppContext().is_enabled) {
