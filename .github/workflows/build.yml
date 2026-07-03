@@ -1,0 +1,129 @@
+name: Build NSPC
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  DEVKITPRO: /opt/devkitpro
+
+jobs:
+  build-sysmodule:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+
+    steps:
+    - name: Install dependencies
+      run: |
+        dkp-pacman -Syu --noconfirm
+        dkp-pacman -S --noconfirm switch-dev switch-libnx switch-mbedtls
+
+    - name: Checkout NSPC with submodules
+      run: |
+        git clone --recursive https://github.com/TristanIsrael/NSParentalControl.git nspc
+
+    - name: Apply patches
+      run: |
+        cd nspc
+        # Apply overlay compatibility patch
+        if [ -f ../patches/main.cpp.patch ]; then
+          patch -p1 < ../patches/main.cpp.patch || echo "Patch may have already been applied or conflicts, continuing..."
+        fi
+        # Apply main.cpp fix for AMS 1.10.2 compatibility
+        if [ -f overlay/src/main.cpp.fixed ]; then
+          cp overlay/src/main.cpp.fixed overlay/src/main.cpp
+        fi
+      working-directory: ${{ github.workspace }}
+
+    - name: Build sysmodule
+      run: |
+        cd nspc/sysmodule
+        make clean
+        make
+      env:
+        DEVKITPRO: /opt/devkitpro
+
+    - name: Upload sysmodule artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nspc-sysmodule
+        path: nspc/sysmodule/out.nosync/exefs.nsp
+
+  build-overlay:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkita64:latest
+    needs: build-sysmodule
+
+    steps:
+    - name: Install dependencies
+      run: |
+        dkp-pacman -Syu --noconfirm
+        dkp-pacman -S --noconfirm switch-dev switch-libnx switch-mbedtls
+
+    - name: Checkout NSPC with submodules
+      run: |
+        git clone --recursive https://github.com/TristanIsrael/NSParentalControl.git nspc
+
+    - name: Apply patches
+      run: |
+        cd nspc
+        # Apply main.cpp fix for AMS 1.10.2 compatibility
+        if [ -f overlay/src/main.cpp.fixed ]; then
+          cp overlay/src/main.cpp.fixed overlay/src/main.cpp
+        fi
+      working-directory: ${{ github.workspace }}
+
+    - name: Build overlay
+      run: |
+        cd nspc/overlay
+        make clean
+        make
+      env:
+        DEVKITPRO: /opt/devkitpro
+
+    - name: Upload overlay artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nspc-overlay
+        path: nspc/overlay/parental_control.ovl
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-sysmodule, build-overlay]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+
+    - name: Create Release Package
+      run: |
+        mkdir -p NSPC_Complete/atmosphere/contents/4200000000003103/flags
+        mkdir -p NSPC_Complete/switch/.overlays
+
+        # Copy sysmodule
+        cp nspc-sysmodule/exefs.nsp NSPC_Complete/atmosphere/contents/4200000000003103/
+
+        # Copy toolbox.json (need to create it)
+        echo '{"name":"NSParentalControl","tid":"4200000000003103","requires_reboot":false,"version":"1.3.0"}' > NSPC_Complete/atmosphere/contents/4200000000003103/toolbox.json
+
+        # Create boot2.flag
+        touch NSPC_Complete/atmosphere/contents/4200000000003103/flags/boot2.flag
+
+        # Copy overlay
+        cp nspc-overlay/parental_control.ovl NSPC_Complete/switch/.overlays/
+
+        # Create ZIP
+        zip -r NSPC_AMS1.10.2_Fix.zip NSPC_Complete/
+
+    - name: Upload Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: NSPC_AMS1.10.2_Fix.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
